@@ -8,6 +8,11 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 # --- CONFIGURAÇÃO DO FLASK E BANCO DE DADOS ---
 app = Flask(__name__)
+# Rota para a página inicial (/) que responde com sucesso
+@app.route('/')
+def index():
+    # Esta rota retorna uma mensagem simples e um código de sucesso 200 OK
+    return "Servidor de Licenças no ar e operando."
 # A Secret Key é para a segurança da sessão de login do admin
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback_secret_key_super_segura_123')
 
