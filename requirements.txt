@@ -1,2 +1,5 @@
+# requirements.txt
 Flask
 gunicorn
+SQLAlchemy
+psycopg2-binary
