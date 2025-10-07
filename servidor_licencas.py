@@ -1,4 +1,4 @@
-# servidor_licencas.py (VERSÃO FINAL COM SUPABASE POSTGRESQL - 100% GRÁTIS)
+# servidor_licencas.py (VERSÃO FINAL COM NOME E EXCLUSÃO DE LICENÇAS)
 import os
 import uuid
 import hashlib
@@ -11,7 +11,6 @@ app = Flask(__name__)
 # Rota para a página inicial (/) que responde com sucesso
 @app.route('/')
 def index():
-    # Esta rota retorna uma mensagem simples e um código de sucesso 200 OK
     return "Servidor de Licenças no ar e operando."
 # A Secret Key é para a segurança da sessão de login do admin
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback_secret_key_super_segura_123')
@@ -33,19 +32,21 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- MODELOS DAS TABELAS DO BANCO DE DADOS (Exatamente como antes) ---
+# --- MODELOS DAS TABELAS DO BANCO DE DADOS ---
 class License(Base):
     __tablename__ = "licenses"
     key = Column(String, primary_key=True, index=True)
     status = Column(String, default="active")
     machine_id = Column(String, nullable=True)
+    # NOVA COLUNA PARA O NOME DO CLIENTE
+    customer_name = Column(String, nullable=True) 
 
 class Config(Base):
     __tablename__ = "config"
     key = Column(String, primary_key=True)
     value = Column(Text)
 
-# Cria as tabelas no banco de dados do Supabase se elas não existirem
+# Cria/Atualiza as tabelas no banco de dados se elas não existirem
 Base.metadata.create_all(bind=engine)
 
 # --- FUNÇÃO DE ACESSO AO BANCO DE DADOS ---
@@ -56,8 +57,8 @@ def get_db():
     finally:
         db.close()
 
-# --- ROTAS PÚBLICAS (PARA A APLICAÇÃO TKINTER) - NENHUMA MUDANÇA AQUI ---
-
+# --- ROTAS PÚBLICAS (PARA A APLICAÇÃO TKINTER) ---
+# ... (NENHUMA MUDANÇA NAS ROTAS /master_password, /activate, /validate) ...
 @app.route('/master_password', methods=['GET'])
 def get_master_password():
     db = next(get_db())
@@ -105,17 +106,102 @@ def validate():
         return jsonify({"status": "invalid", "message": "ID da máquina não corresponde."}), 403
     return jsonify({"status": "valid", "message": "Licença válida."})
 
-# --- ROTAS DE ADMINISTRAÇÃO (PAINEL WEB) - NENHUMA MUDANÇA AQUI ---
-# O HTML e a lógica são os mesmos, pois eles usam as funções de banco de dados que adaptamos.
 
+# --- ROTAS DE ADMINISTRAÇÃO (PAINEL WEB) ---
+
+# TEMPLATE HTML ATUALIZADO
 ADMIN_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="pt-br"><head><meta charset="UTF-8"><title>Painel de Administração</title><style>body{font-family:sans-serif;margin:2em;background-color:#f4f4f9;color:#333}.container{max-width:900px;margin:auto;background:white;padding:2em;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.1)}h1,h2{color:#5a5a5a}table{width:100%;border-collapse:collapse;margin-top:1em}th,td{padding:.75em;text-align:left;border-bottom:1px solid #ddd}th{background-color:#f2f2f2}.btn{padding:.5em 1em;color:white;border:none;border-radius:4px;cursor:pointer;text-decoration:none;display:inline-block}.btn-green{background-color:#28a745}.btn-red{background-color:#dc3545}.btn-blue{background-color:#007bff}.actions{margin-top:1.5em;display:flex;gap:1em}.form-group{margin-top:1em}input[type=text],input[type=password]{padding:.5em;width:300px}.message{padding:1em;margin-bottom:1em;border-radius:4px}.message-success{background-color:#d4edda;color:#155724}</style></head><body><div class="container"><h1>Painel de Administração</h1>{% if message %}<div class="message message-success">{{ message }}</div>{% endif %}<div class="actions"><form action="{{ url_for('admin_add_key') }}" method="post" style="margin:0;"><button type="submit" class="btn btn-green">Gerar Nova Chave</button></form></div><h2>Licenças Atuais</h2><table><tr><th>Chave</th><th>Status</th><th>ID da Máquina</th><th>Ação</th></tr>{% for license in licenses %}<tr><td>{{ license.key }}</td><td>{{ license.status | upper }}</td><td>{{ license.machine_id or 'NÃO ATIVADA' }}</td><td>{% if license.status == 'active' %}<a href="{{ url_for('admin_toggle_status', key=license.key) }}" class="btn btn-red">Bloquear</a>{% else %}<a href="{{ url_for('admin_toggle_status', key=license.key) }}" class="btn btn-blue">Desbloquear</a>{% endif %}</td></tr>{% endfor %}</table><h2>Senha Mestra (Fallback)</h2><form action="{{ url_for('admin_set_master') }}" method="post" class="form-group"><label for="master_pass">Definir/Alterar Senha de Fallback:</label><br><input type="password" name="master_pass" id="master_pass" required><button type="submit" class="btn btn-blue">Salvar Senha Mestra</button></form><p>Hash Atual: {{ master_hash or 'Não definida' }}</p></div></body></html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Painel de Administração de Licenças</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 2em; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #5a5a5a; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+        th, td { padding: 0.75em; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f2f2f2; }
+        td form { display: flex; gap: 5px; align-items: center; margin: 0; }
+        .btn { padding: 0.5em 1em; color: white !important; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; font-size: 0.9em; }
+        .btn-green { background-color: #28a745; }
+        .btn-red { background-color: #dc3545; }
+        .btn-orange { background-color: #fd7e14; }
+        .btn-blue { background-color: #007bff; }
+        .actions { margin-top: 1.5em; display: flex; gap: 1em; }
+        .form-group { margin-top: 1em; }
+        input[type=text], input[type=password] { padding: 0.5em; border: 1px solid #ccc; border-radius: 4px; }
+        .message { padding: 1em; margin-bottom: 1em; border-radius: 4px; }
+        .message-success { background-color: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Painel de Administração</h1>
+        {% if message %}
+            <div class="message message-success">{{ message }}</div>
+        {% endif %}
+
+        <div class="actions">
+            <form action="{{ url_for('admin_add_key') }}" method="post" style="margin:0;">
+                <button type="submit" class="btn btn-green">Gerar Nova Chave</button>
+            </form>
+        </div>
+
+        <h2>Licenças Atuais</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Chave</th>
+                    <th>Nome do Cliente</th>
+                    <th>Status</th>
+                    <th>ID da Máquina</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for license in licenses %}
+                <tr>
+                    <td>{{ license.key }}</td>
+                    <td>
+                        <form action="{{ url_for('admin_name_license', key=license.key) }}" method="post">
+                            <input type="text" name="customer_name" placeholder="Nome do cliente" value="{{ license.customer_name or '' }}">
+                            <button type="submit" class="btn btn-blue">Salvar</button>
+                        </form>
+                    </td>
+                    <td>{{ license.status | upper }}</td>
+                    <td>{{ license.machine_id or 'NÃO ATIVADA' }}</td>
+                    <td>
+                        {% if license.status == 'active' %}
+                            <a href="{{ url_for('admin_toggle_status', key=license.key) }}" class="btn btn-orange">Bloquear</a>
+                        {% else %}
+                            <a href="{{ url_for('admin_toggle_status', key=license.key) }}" class="btn btn-green">Desbloquear</a>
+                        {% endif %}
+                        <a href="{{ url_for('admin_delete_license', key=license.key) }}" class="btn btn-red" onclick="return confirm('Tem certeza que deseja EXCLUIR esta chave permanentemente? Esta ação não pode ser desfeita.');">Excluir</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h2>Senha Mestra (Fallback)</h2>
+        <form action="{{ url_for('admin_set_master') }}" method="post" class="form-group">
+            <label for="master_pass">Definir/Alterar Senha de Fallback:</label><br>
+            <input type="password" name="master_pass" id="master_pass" required>
+            <button type="submit" class="btn btn-blue">Salvar Senha Mestra</button>
+        </form>
+        <p>Hash Atual: {{ master_hash or 'Não definida' }}</p>
+    </div>
+</body>
+</html>
 """
+
 LOGIN_TEMPLATE = """
 <!DOCTYPE html>
 <html><head><title>Login Admin</title></head><body style="font-family: sans-serif; text-align: center; padding-top: 5em;"><h2>Acesso ao Painel de Administração</h2>{% if error %}<p style="color: red;">{{ error }}</p>{% endif %}<form method="post"><label for="password">Senha:</label><input type="password" name="password" id="password" required><button type="submit">Entrar</button></form></body></html>
 """
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_panel():
     if request.method == 'POST':
@@ -128,7 +214,8 @@ def admin_panel():
         return render_template_string(LOGIN_TEMPLATE)
     
     db = next(get_db())
-    licenses = db.query(License).all()
+    # Ordena as licenças por nome de cliente para melhor visualização
+    licenses = db.query(License).order_by(License.customer_name).all()
     master_config = db.query(Config).filter(Config.key == "master_password_hash").first()
     message = session.pop('message', None)
     return render_template_string(ADMIN_TEMPLATE, licenses=licenses, master_hash=master_config.value if master_config else None, message=message)
@@ -175,4 +262,33 @@ def admin_set_master():
             db.add(new_master_config)
         db.commit()
         session['message'] = "Senha mestra atualizada com sucesso."
+    return redirect(url_for('admin_panel'))
+
+# --- NOVAS ROTAS PARA NOMEAR E EXCLUIR LICENÇAS ---
+
+@app.route('/admin/name/<key>', methods=['POST'])
+def admin_name_license(key):
+    """Salva o nome do cliente associado a uma chave."""
+    if not session.get('logged_in'): return redirect(url_for('admin_panel'))
+    
+    db = next(get_db())
+    license_to_name = db.query(License).filter(License.key == key).first()
+    if license_to_name:
+        new_name = request.form.get('customer_name')
+        license_to_name.customer_name = new_name
+        db.commit()
+        session['message'] = f"Nome da chave {key} foi atualizado."
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/delete/<key>')
+def admin_delete_license(key):
+    """Exclui uma chave de licença permanentemente."""
+    if not session.get('logged_in'): return redirect(url_for('admin_panel'))
+    
+    db = next(get_db())
+    license_to_delete = db.query(License).filter(License.key == key).first()
+    if license_to_delete:
+        db.delete(license_to_delete)
+        db.commit()
+        session['message'] = f"Chave {key} foi EXCLUÍDA permanentemente."
     return redirect(url_for('admin_panel'))
